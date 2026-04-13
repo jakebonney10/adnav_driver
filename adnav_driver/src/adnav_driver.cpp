@@ -249,7 +249,7 @@ void Driver::deviceSetup() {
 
 	// Since we are not waiting for device acknowledgement at startup
 	acknowledge_recieve_ = true;
-	(void)SendPacketPeriods(packet_periods); // Will overwrite acknowledge_receive_ to false.
+	(void)SendPacketPeriods(packet_periods, false, false); // Will overwrite acknowledge_receive_ to false.
 }
 
 /**
