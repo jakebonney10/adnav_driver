@@ -118,6 +118,14 @@ void Driver::waitForDevicePacket() {
 	bool recieved = false;
 	int bytes_received;
 
+	// Some stream configurations (e.g. a push-only TCP/UDP data stream that only
+	// outputs a fixed set of packets) never emit a Device Information packet and
+	// ignore our request for one. In that case, proceed once we have confirmed the
+	// stream is alive by receiving other valid ANPP packets, so we don't hang here
+	// forever. Device id/serial just remain unset (only used cosmetically).
+	int data_packets_seen = 0;
+	constexpr int kMaxDataPacketsBeforeProceeding = 50;
+
 	RCLCPP_DEBUG(this->get_logger(), "Requesting Device Info");
 
 	while(recieved == false && rclcpp::ok()) {
@@ -144,10 +152,22 @@ void Driver::waitForDevicePacket() {
 					deviceInfoDecoder(an_packet);
 					recieved = true;
 
+				} else {
+					data_packets_seen++;
 				}
 
 				// Ensure that you free the an_packet when your done with it or you will leak memory
 				an_packet_free(&an_packet);
+			}
+
+			// Device is streaming valid data but never sent Device Information.
+			// Stop waiting and continue startup so publishers get created.
+			if (!recieved && data_packets_seen >= kMaxDataPacketsBeforeProceeding) {
+				RCLCPP_WARN(this->get_logger(),
+					"No Device Information packet received after %d data packets; "
+					"proceeding without it (device id/serial will be unset).",
+					data_packets_seen);
+				break;
 			}
 		}
 	}
@@ -172,6 +192,7 @@ void Driver::createPublishers() {
 	imu_raw_pub_ = this->create_publisher<sensor_msgs::msg::Imu>(std::string(node_name_ + "/imu_raw"), 10);
 	nav_sat_fix_pub_ = this->create_publisher<sensor_msgs::msg::NavSatFix>(std::string(node_name_ + "/nav_sat_fix"), 10);
 	magnetic_field_pub_ = this->create_publisher<sensor_msgs::msg::MagneticField>(std::string(node_name_ + "/magnetic_field"), 10);
+	local_magnetics_pub_ = this->create_publisher<sensor_msgs::msg::MagneticField>(std::string(node_name_ + "/magnetic_field_local"), 10);
 	barometric_pressure_pub_ = this->create_publisher<sensor_msgs::msg::FluidPressure>(std::string(node_name_ + "/barometric_pressure"), 10);
 	temperature_pub_ = this->create_publisher<sensor_msgs::msg::Temperature>(std::string(node_name_ + "/temperature"), 10);
 	twist_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(std::string(node_name_ + "/twist"), 10);
@@ -557,6 +578,7 @@ void Driver::publishTimerCallback() {
 	system_status_pub_->publish(system_status_msg_);
 	filter_status_pub_->publish(filter_status_msg_);
 	magnetic_field_pub_->publish(mag_field_msg_);
+	local_magnetics_pub_->publish(local_mag_msg_);
 	barometric_pressure_pub_->publish(baro_msg_);
 	temperature_pub_->publish(temp_msg_);
 	pose_pub_->publish(pose_msg_);
@@ -1479,6 +1501,9 @@ void Driver::decodePackets(an_decoder_t &an_decoder, const int &bytes) {
 			case packet_id_raw_sensors: rawSensorsRosDecoder(an_packet);
 				break;
 
+			case packet_id_local_magnetics: localMagneticsRosDecoder(an_packet);
+				break;
+
 			default:
 				RCLCPP_WARN/*_THROTTLE*/(this->get_logger(), /* *this->get_clock(), 500, */
 					"Unsupported packet definition for ROS driver. PACKET_ID: %d", an_packet->id);
@@ -1913,6 +1938,27 @@ void Driver::rawSensorsRosDecoder(an_packet_t* an_packet) {
 
 	auto diff = this->get_clock().get()->now().nanoseconds() - time;
 	RCLCPP_DEBUG(this->get_logger(), "Packet 28:\tMutex: U\tAccess: %d\tTimeLock: %ld μs", P28_num_++, diff/1000);
+}
+
+/**
+ * @brief Function to decode the Local Magnetics ANPP Packet (ANPP.50).
+ *
+ * @param an_packet a pointer to an an_packet_t object which will be decoded.
+ */
+void Driver::localMagneticsRosDecoder(an_packet_t* an_packet) {
+	local_magnetics_packet_t local_magnetics_packet;
+
+	std::unique_lock<std::mutex> lock(messages_mutex_);
+
+	if(decode_local_magnetics_packet(&local_magnetics_packet, an_packet) == 0) {
+		local_mag_msg_.header.frame_id = frame_id_;
+		local_mag_msg_.magnetic_field.x = local_magnetics_packet.magnetic_field[0];
+		local_mag_msg_.magnetic_field.y = local_magnetics_packet.magnetic_field[1];
+		local_mag_msg_.magnetic_field.z = local_magnetics_packet.magnetic_field[2];
+	}
+
+	msg_write_done_ = true;
+	msg_cv_.notify_one();
 }
 
 

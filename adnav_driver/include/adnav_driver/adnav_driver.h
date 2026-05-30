@@ -166,6 +166,7 @@ class Driver : public rclcpp::Node  // Inheriting gives every "this->" as a poin
     sensor_msgs::msg::Imu           imu_msg_;
     sensor_msgs::msg::Imu           imu_raw_msg_;
     sensor_msgs::msg::MagneticField mag_field_msg_;
+    sensor_msgs::msg::MagneticField local_mag_msg_;
     sensor_msgs::msg::NavSatFix     nav_fix_msg_;
     sensor_msgs::msg::FluidPressure baro_msg_;
     sensor_msgs::msg::Temperature   temp_msg_;
@@ -179,6 +180,7 @@ class Driver : public rclcpp::Node  // Inheriting gives every "this->" as a poin
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr             		imu_raw_pub_;
     rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr       		nav_sat_fix_pub_;
     rclcpp::Publisher<sensor_msgs::msg::MagneticField>::SharedPtr 			magnetic_field_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::MagneticField>::SharedPtr 			local_magnetics_pub_;
     rclcpp::Publisher<sensor_msgs::msg::FluidPressure>::SharedPtr 			barometric_pressure_pub_;
     rclcpp::Publisher<sensor_msgs::msg::Temperature>::SharedPtr 			temperature_pub_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr 				twist_pub_;
@@ -299,6 +301,7 @@ class Driver : public rclcpp::Node  // Inheriting gives every "this->" as a poin
     void ecefPosRosDecoder(an_packet_t* an_packet);
     void quartOrientSDRosDriver(an_packet_t* an_packet);
     void rawSensorsRosDecoder(an_packet_t* an_packet);
+    void localMagneticsRosDecoder(an_packet_t* an_packet);
 };
 
 }  // namespace adnav
